@@ -1,0 +1,18 @@
+[package]
+name = "cw-conformance"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+cw-crypto = { path = "../cw-crypto" }
+commonwire = { path = "../commonwire" }
+serde_json.workspace = true
+rand.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "macros", "sync"] }
+hyper = { version = "1", features = ["server", "client", "http1"] }
+http = "1"
+futures = "0.3"
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa", "std"] }

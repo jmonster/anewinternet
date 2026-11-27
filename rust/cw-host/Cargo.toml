@@ -1,0 +1,22 @@
+[package]
+name = "cw-host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+cw-crypto = { path = "../cw-crypto" }
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+subtle.workspace = true
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa", "std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys = "0.3"
+getrandom.workspace = true

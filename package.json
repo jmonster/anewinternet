@@ -1,0 +1,9 @@
+{
+  "name": "commonwire-host",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "workerd": "1.20260801.1"
+  }
+}

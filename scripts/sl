@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Builds and checks the commonwire host: the Cloudflare Worker package and the commonwire program.
+#
+#   scripts/sl worker             the Worker package, in out/worker
+#   scripts/sl build              commonwire for this machine, in $CARGO_TARGET_DIR/native/commonwire
+#   scripts/sl test conformance   the conformance suite against commonwire and the Worker in local workerd
+#   scripts/sl test hosts         commonwire's tests, the conformance suite and the host budgets
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/rust/target}"
+SL_OUT="${SL_OUT:-$ROOT/out}"
+WORKER_PKG="$SL_OUT/worker"
+mkdir -p "$SL_OUT"
+[[ -d node_modules ]] || bun install --frozen-lockfile
+
+# cw-host compiled to WASM plus the TypeScript shim in worker/: the three files a host on Cloudflare runs. The
+# package must fit the Workers Free script size limit.
+worker_build() {
+  (cd rust && cargo build --locked --release -p cw-host --target wasm32-unknown-unknown)
+  local wasm="$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/cw_host.wasm"
+  if [[ ! -f "$WORKER_PKG/index.js" || -n "$(find "$wasm" worker -newer "$WORKER_PKG/index.js" -print -quit)" ]]; then
+    rm -rf "$WORKER_PKG"
+    wasm-bindgen --target web --out-dir "$WORKER_PKG" "$wasm"
+    wasm-opt -Oz --enable-bulk-memory --enable-bulk-memory-opt --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int --enable-multivalue --enable-reference-types "$WORKER_PKG/cw_host_bg.wasm" -o "$WORKER_PKG/cw_host_bg.wasm"
+    rm -f "$WORKER_PKG/index.js"
+    node_modules/.bin/tsc -p worker/tsconfig.json --outDir "$WORKER_PKG"
+    rm -f "$WORKER_PKG"/*.d.ts
+  fi
+  local size
+  size=$(cat "$WORKER_PKG/index.js" "$WORKER_PKG/cw_host.js" "$WORKER_PKG/cw_host_bg.wasm" | gzip -9 | wc -c | tr -d ' ')
+  printf 'host Worker: %s bytes gzipped (limit 3145728)\n' "$size"
+  (( size <= 3145728 )) || { printf 'host Worker is over the Workers Free size limit\n' >&2; return 1; }
+}
+
+case "${1:-}:${2:-}" in
+  worker:)
+    worker_build
+    ;;
+  build:)
+    (cd rust && cargo build --locked --profile native -p commonwire)
+    ;;
+  test:conformance)
+    worker_build
+    (cd rust && cargo build --locked --profile native -p commonwire -p cw-conformance)
+    python3 scripts/hosts.py "$CARGO_TARGET_DIR/native" "$WORKER_PKG" "$SL_OUT/hosts" conformance
+    ;;
+  test:hosts)
+    worker_build
+    (cd rust && cargo test --locked -p cw-crypto -p cw-host -p commonwire)
+    (cd rust && cargo build --locked --profile native -p commonwire -p cw-conformance)
+    python3 scripts/hosts.py "$CARGO_TARGET_DIR/native" "$WORKER_PKG" "$SL_OUT/hosts"
+    ;;
+  *)
+    sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2
+    exit 64
+    ;;
+esac
